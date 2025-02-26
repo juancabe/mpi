@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/timeb.h>
+#include <sys/time.h>
 #include <time.h>
 #include <limits.h>
 #include <mpi.h>
@@ -13,6 +13,12 @@
 
 #define SETS  3
 #define TAMANHO  50
+
+// Definición de tags para la comunicación
+#define TAG_FOUND 100
+#define TAG_STOP  101
+
+int pID = 0;
 
 unsigned int numeros[SETS_LISTA][TAMANHO_LISTA]= {
 {8,66,748,1158,10231,497134,4608707,47820120,2,41,578,1423,52611,770895,2790721,34643109,
@@ -67,29 +73,30 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
         (*intentos)++;
         if ((myrand()%(NUM_MAX-1)+1)==numero){//Numero encontrado
             bSalir=1;
-            encontrado = pID;
             if (pID != 0) {
                 MPI_Send(&pID, 1, MPI_INT, 0, TAG_FOUND, MPI_COMM_WORLD);
             }
         }
         if (pID == 0) { //Comprobar si alguien lo a encontrado
-            while (MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status) && flag) {
+            MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
+            while (flag) {
                 int mensajero;
                 MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
                 if (i == 0){
-                    encontrado[mensajero-1] = 2;
+                    encontrado[mensajero] = 2;
                 }else{
-                    encontrado[mensajero-1]= 1;
+                    encontrado[mensajero]= 1;
                 }
                 bSalir = 1;
                 i++;
+                MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
             }
         }else{ //Comprobar si hay que para
             MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &parar, &status);
             if (parar) {
                 int dummy;
                 MPI_Recv(&dummy, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
-                break;
+                bSalir = 1;
             }
         }
         
@@ -98,10 +105,8 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
     *tpo=t2-t1;
 }
 
-int pID = 0;
 
-
-main(int argc, char** argv){
+int main(int argc, char *argv[]) {
 
     MPI_Init(&argc, &argv);
 
@@ -110,8 +115,8 @@ main(int argc, char** argv){
     double tpo_total = 0.0;
     int a;
 
-    int MPI_comm_size(MPI_COMM_WORLD, & iNP);
-    int MPI_Comm_rank(MPI_COMM_WORLD, &pID);
+    MPI_Comm_size(MPI_COMM_WORLD, &iNP);
+    MPI_Comm_rank(MPI_COMM_WORLD, &pID); 
 
     int encontrado[iNP];
     for(int i = 0; i < iNP; i++){
@@ -121,44 +126,37 @@ main(int argc, char** argv){
     mysrand(pID);
 
     for (int i=0; i < SETS_LISTA; i++){
-        MPI_Iprobe(MPI_ANY_SOURCE, TAG_X, MPI_COMM_WORLD, &flag, &status);
-        if (!flag){
-            int dummy;
-            MPI_Recv(&dummy, 1, MPI_INT, status.MPI_SOURCE, TAG_X, MPI_COMM_WORLD, &status);
-        }
         if (pID == 0)
             printf("SET: %d\n", i);
         for (int j=0; j < TAMANHO; j++){
-            if (pID == 0){
+            if (pID == 0)
                 numero=numeros[i][j];
                 // Difunde el número a todos los procesos
                 MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD);
-            }
 
-            encontrado = -1;
             unsigned long long intentos = 0;
             double tpo = 0.0;
-            busca_numero(numero, &intentos, &tpo);
+            busca_numero(numero, &intentos, &tpo, encontrado);
 
+            int enseñar=-1, tambien[iNP];
+            tambien[0]=-1;
             if (pID == 0) {
                 //Hay un fallo, el padre le envia al proceso que ha encontrado el numero tambien que pare, esto esta mal, ha que arreglarlo
                 int b=0;
-                int enseñar, tambien[iNP]
-                tambien[0]=-1;
                 for (int k = 1; k < iNP; k++) {
-                    if (1 != encontrado[k] || 2 != encontrado[k]){
+                    if (1 != encontrado[k] && 2 != encontrado[k]){
                         int siguiente = 0;
                         MPI_Send(&siguiente, 1, MPI_INT, k, TAG_STOP, MPI_COMM_WORLD);                        
                     }
                     if (1 == encontrado[k]){
-                        tambien[b]=k+1;
+                        tambien[b]=k;
                         encontrado[k]=-1;
                         tambien[b+1]=-1;
                         b++;
                     }
                     if (2 == encontrado[k]){
-                        encontrado[k]=-1
-                        enseñar = k+1;
+                        encontrado[k]=-1;
+                        enseñar = k;
                     }
                 }
             }
@@ -169,13 +167,14 @@ main(int argc, char** argv){
             MPI_Reduce(&tpo, &maximo_tpo, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
             
             if (pID == 0) {
-                total_intentos += sumar_intentos;
-                total_tpo += maximo_tpo;
-                printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %d)", i+1, SETS_LISTA, j+1, TAMANHO, numero, sumar_intentos, maximo_tpo, enseñar);
+                intentos_totales += sumar_intentos;
+                tpo_total += maximo_tpo;
+                printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %d)", i+1, SETS_LISTA, j+1, TAMANHO, numero, sumar_intentos, maximo_tpo, (enseñar == -1) ? 0 : enseñar);
+
                 a=0;
                 while (tambien[a] != -1){
                     if (a == 0){
-                        pritnf(" tambien encontardo por %d", tambien[a]);
+                        printf(" tambien encontardo por %d", tambien[a]);
                     }else{
                         printf(", %d", tambien[a]);
                     }
