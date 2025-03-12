@@ -103,7 +103,7 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
                 EST_IPROBE_FIND++;
                 if (flag){
                     int mensajero;
-                    MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status); // Enviar TAG_FOUND
+                    MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
                     EST_RECV_FIND++;
                     encontrado = mensajero;
                     bSalir = 1;
