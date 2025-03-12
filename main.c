@@ -64,11 +64,11 @@ double mygettime(void) {
 
 static unsigned int next = 1;
 
-#define RAND_MAX 2147483647
+#define MY_RAND_MAX 2147483647
 
 int myrand(void){
     next = next * 1103515245 + 12345;
-    return((unsigned)(next % RAND_MAX));
+    return((unsigned)(next % MY_RAND_MAX));
 }
 
 void mysrand(unsigned int seed){
@@ -94,7 +94,7 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
                 EST_RECV_STOP++;
             }
         }
-        if (pID == 0) { //Comprobar si alguien lo a encontrado
+        if (pID == 0) { //Comprobar si alguien lo ha encontrado
             if (i == 4000){
                 MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
                 EST_IPROBE_FIND++;
@@ -108,7 +108,7 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
                 i=0;
             }
             i++;
-        }else{ //Comprobar si hay que para
+        }else{ //Comprobar si hay que parar
             if (i == 4000){
                 MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &parar, &status);
                 EST_IPROBE_STOP++;
@@ -138,9 +138,12 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &iNP);
     MPI_Comm_rank(MPI_COMM_WORLD, &pID); 
 
-    unsigned long encontrados_por_proceso[iNP] = {0};
+    unsigned long encontrados_por_proceso[iNP];
+    memset(encontrados_por_proceso, 0, sizeof(unsigned long) * iNP);
 
     mysrand(pID);
+
+    double tiempo_inicio_total = mygettime();
 
     for (int i=0; i < SETS_LISTA; i++){
         if (pID == 0)
@@ -203,7 +206,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (pID == 0) {
-            tiempo_fin_total = mygettime();
+            double tiempo_fin_total = mygettime();
             double tiempo_total_prueba = tiempo_fin_total - tiempo_inicio_total;
         
             printf("Intentos Acumulados : %llu\n", intentos_totales);
