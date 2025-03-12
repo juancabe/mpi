@@ -174,21 +174,22 @@ int main(int argc, char *argv[]) {
             
 
             unsigned long long sumar_intentos = 0; // Intentos acumulados de todos los procesos
-            double maximo_tpo = 0.0;               // Tiempo máximo en busca_numero para todos los procesos
+            double sumar_tpo = 0.0;               // Tiempo máximo en busca_numero para todos los procesos
 
             // -- Conseguir datos de todos los procesos, sincronizándolos --
             MPI_Reduce(&intentos, &sumar_intentos, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
             EST_REDUCE_INTENTOS++;
-            MPI_Reduce(&tpo, &maximo_tpo, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+            MPI_Reduce(&tpo, &sumar_tpo, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
             EST_REDUCE_TPO++;
             // --                                                         --
+            
 
             if (pID == 0) { // Imprimir datos de esta ronda de busca_numero
                 
                 intentos_totales += sumar_intentos;
-                tpo_total += maximo_tpo; // TODO: Sería += maximo_tpo * iNP para contar el acumulado de todos los procesos? (Ya que estamos usando MPI_MAX)
+                tpo_total += sumar_tpo; // HECHO: Sería += sumar_tpo
                 printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %d)", 
-                        i+1, SETS_LISTA, j+1, TAMANHO, numero, sumar_intentos, maximo_tpo, encontrado);
+                        i+1, SETS_LISTA, j+1, TAMANHO, numero, sumar_intentos, tpo, encontrado);
                 
                 int flag;
                 int mensajero;
