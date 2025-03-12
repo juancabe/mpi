@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &iNP); // Devuelve el número de procesos "invocados"
     MPI_Comm_rank(MPI_COMM_WORLD, &pID); // Devuelve el PID de MPI
 
-    unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso TODO: Usarlo xD
+    unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso
 
     memset(encontrados_por_proceso, 0, sizeof(unsigned long) * iNP);
 
@@ -192,7 +192,9 @@ int main(int argc, char *argv[]) {
                 tpo_total += sumar_tpo; // HECHO: Sería += sumar_tpo
                 printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %d)", 
                         i+1, SETS_LISTA, j+1, TAMANHO, numero, sumar_intentos, tpo, encontrado);
-                
+               
+                encontrados_por_proceso[encontrado]++;
+
                 int flag;
                 int mensajero;
                 EST_IPROBE_FIND++;
@@ -203,6 +205,7 @@ int main(int argc, char *argv[]) {
                     EST_RECV_FIND++;
                     if (a == 0){
                         printf(" |También encontrado por %d|", mensajero); // Había un error
+                        encontrados_por_proceso[mensajero]++;
                     }else{
                         printf(", %d", encontrado);
                     }
