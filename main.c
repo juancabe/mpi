@@ -13,7 +13,7 @@
 #define SETS_LISTA 3
 
 #define SETS  3
-#define TAMANHO  50 // TODO: Por qué se utiliza este en vez de TAMANHO_LISTA
+#define TAMANHO  50
 
 // Definición de tags para la comunicación
 #define TAG_FOUND 100
@@ -32,7 +32,6 @@ unsigned long EST_IPROBE_FIND = 0;
 unsigned long EST_IPROBE_STOP = 0;
 
 int pID = 0;
-int encontrado = 0; // Igual sería mejor que no fuera una variable global? Indica el proceso que encontró el número en la funcion busca_numero TODO
 MPI_Status status;
 
 unsigned int numeros[SETS_LISTA][TAMANHO_LISTA]= {
@@ -76,7 +75,8 @@ void mysrand(unsigned int seed){
     next = seed;
 }
 
-void busca_numero(unsigned int numero, unsigned long long * intentos, double * tpo){
+// En el proceso padre devuelve el hijo que lo ha encontrado.
+int busca_numero(unsigned int numero, unsigned long long * intentos, double * tpo){
     short bSalir=0;
     double t1,t2;
     *intentos=0;
@@ -85,6 +85,7 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
     int flag = 0;
     int parar = 0;
     int para;
+    int encontrado = 0; // Proceso que encuentra el número, por defecto es el padre
     do{ 
         (*intentos)++;
        
@@ -105,7 +106,7 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
                     int mensajero;
                     MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
                     EST_RECV_FIND++;
-                    encontrado = mensajero;
+                    encontrado = mensajero; // Lo ha encontrado "mensajero"
                     bSalir = 1;
                 }
                 i=0;
@@ -128,6 +129,7 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
     } while (!bSalir);
     t2=mygettime();
     *tpo=t2-t1;
+    return encontrado;
 }
 
 int main(int argc, char *argv[]) {
@@ -142,7 +144,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &iNP); // Devuelve el número de procesos "invocados"
     MPI_Comm_rank(MPI_COMM_WORLD, &pID); // Devuelve el PID de MPI
 
-    unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso
+    unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso TODO: Usarlo xD
 
     memset(encontrados_por_proceso, 0, sizeof(unsigned long) * iNP);
 
@@ -162,7 +164,7 @@ int main(int argc, char *argv[]) {
 
             unsigned long long intentos = 0;
             double tpo = 0.0;
-            busca_numero(numero, &intentos, &tpo);
+            int encontrado = busca_numero(numero, &intentos, &tpo);
 
             if (pID == 0) {
                 int para = 0; // "para" es un buffer que no significa nada, no queremos enviar info, solo indicar que paren
@@ -200,14 +202,13 @@ int main(int argc, char *argv[]) {
                     MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
                     EST_RECV_FIND++;
                     if (a == 0){
-                        printf(" |También encontrado por %d|", encontrado);
+                        printf(" |También encontrado por %d|", mensajero); // Había un error
                     }else{
                         printf(", %d", encontrado);
                     }
                     a++;
                     EST_IPROBE_FIND++;
                 }
-                encontrado = 0; // Encontrado es por defecto 0, si un PID != 0 encuentra, se devuelve en busca_numero
                 printf("\n");
             }
 
