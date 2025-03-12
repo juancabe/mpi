@@ -205,7 +205,6 @@ int main(int argc, char *argv[]) {
                     EST_RECV_FIND++;
                     if (a == 0){
                         printf(" |También encontrado por %d|", mensajero); // Había un error
-                        encontrados_por_proceso[mensajero]++;
                     }else{
                         printf(", %d", encontrado);
                     }
@@ -222,6 +221,9 @@ int main(int argc, char *argv[]) {
             printf("Resumen SET %d:\nIntentos Acumulados: %llu\nTiempo Acumulado: %.8f\n", i, intentos_totales, tpo_total);
          
     }
+
+    // TODO: "Una vez finalizados los “sets” notificará a todos los procesos que ya no hay más números que buscar y que manden sus estadísticas de llamadas a funciones MPI."
+        // ¿Los procesos hijos pueden conocer de antemano el total de números a encontrar? Ralves dice que solo se enteran de que hay que parar cuando se les notifica
 
         
     if (pID == 0) {
