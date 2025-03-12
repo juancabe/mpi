@@ -215,15 +215,12 @@ int main(int argc, char *argv[]) {
                 printf("\n");
             }
 
-            MPI_Barrier(MPI_COMM_WORLD); // Para qué es esto necesario TODO
             
         }
         
         if (pID == 0)
             printf("Resumen SET %d:\nIntentos Acumulados: %llu\nTiempo Acumulado: %.8f\n", i, intentos_totales, tpo_total);
-        
-        MPI_Barrier(MPI_COMM_WORLD); // Lo mismo TODO
-        
+         
     }
 
         
