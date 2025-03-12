@@ -6,13 +6,14 @@
 #include <limits.h>
 #include <mpi.h>
 
+#define ITERACIONES_SIN_MIRAR 200000
 
 #define NUM_MAX 100000000
 #define TAMANHO_LISTA 80
 #define SETS_LISTA 3
 
 #define SETS  3
-#define TAMANHO  50
+#define TAMANHO  50 // TODO: Por qué se utiliza este en vez de TAMANHO_LISTA
 
 // Definición de tags para la comunicación
 #define TAG_FOUND 100
@@ -31,7 +32,7 @@ unsigned long EST_IPROBE_FIND = 0;
 unsigned long EST_IPROBE_STOP = 0;
 
 int pID = 0;
-int encontrado = 0;
+int encontrado = 0; // Igual sería mejor que no fuera una variable global? Indica el proceso que encontró el número en la funcion busca_numero TODO
 MPI_Status status;
 
 unsigned int numeros[SETS_LISTA][TAMANHO_LISTA]= {
@@ -74,6 +75,7 @@ int myrand(void){
 void mysrand(unsigned int seed){
     next = seed;
 }
+
 void busca_numero(unsigned int numero, unsigned long long * intentos, double * tpo){
     short bSalir=0;
     double t1,t2;
@@ -83,24 +85,25 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
     int flag = 0;
     int parar = 0;
     int para;
-    do{
+    do{ 
         (*intentos)++;
+       
         if ((myrand()%(NUM_MAX-1)+1)==numero){//Numero encontrado
             bSalir=1;
-            if (pID != 0) {
-                MPI_Send(&pID, 1, MPI_INT, 0, TAG_FOUND, MPI_COMM_WORLD);
+            if (pID != 0) { // Encontrado, por defecto, es 0, si el padre lo encuentra no tiene que hacer nada
+                MPI_Send(&pID, 1, MPI_INT, 0, TAG_FOUND, MPI_COMM_WORLD); // Decirle al padre que lo hemos encontrado
                 EST_SEND_FIND++;
-                MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
+                MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status); // Esperar a que nos confirme la recepción, nos sincroniza con los que no han encontrado el número
                 EST_RECV_STOP++;
             }
         }
         if (pID == 0) { //Comprobar si alguien lo ha encontrado
-            if (i == 4000){
-                MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
+            if (i == ITERACIONES_SIN_MIRAR){ // Cada ITERACIONES_SIN_MIRAR iteraciones
+                MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status); // Recibir TAG_FOUND primer proceso en encontrar 
                 EST_IPROBE_FIND++;
                 if (flag){
                     int mensajero;
-                    MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
+                    MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status); // Enviar TAG_FOUND
                     EST_RECV_FIND++;
                     encontrado = mensajero;
                     bSalir = 1;
@@ -108,11 +111,12 @@ void busca_numero(unsigned int numero, unsigned long long * intentos, double * t
                 i=0;
             }
             i++;
-        }else{ //Comprobar si hay que parar
-            if (i == 4000){
+        } else { //Comprobar si hay que parar
+            if (i == ITERACIONES_SIN_MIRAR){
                 MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &parar, &status);
                 EST_IPROBE_STOP++;
                 if (parar) {
+                    // Consumir el mensaje de parada
                     MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
                     EST_RECV_STOP++;
                     bSalir = 1;
@@ -135,10 +139,11 @@ int main(int argc, char *argv[]) {
     double tpo_total = 0.0;
     int a;
 
-    MPI_Comm_size(MPI_COMM_WORLD, &iNP);
-    MPI_Comm_rank(MPI_COMM_WORLD, &pID); 
+    MPI_Comm_size(MPI_COMM_WORLD, &iNP); // Devuelve el número de procesos "invocados"
+    MPI_Comm_rank(MPI_COMM_WORLD, &pID); // Devuelve el PID de MPI
 
-    unsigned long encontrados_por_proceso[iNP];
+    unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso
+
     memset(encontrados_por_proceso, 0, sizeof(unsigned long) * iNP);
 
     mysrand(pID);
@@ -151,7 +156,8 @@ int main(int argc, char *argv[]) {
         for (int j=0; j < TAMANHO; j++){
             if (pID == 0)
                 numero=numeros[i][j];
-            MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+            MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD); // Comunicar a todos el numero a adivinar
             EST_BCAST_NUMERO++;
 
             unsigned long long intentos = 0;
@@ -159,89 +165,102 @@ int main(int argc, char *argv[]) {
             busca_numero(numero, &intentos, &tpo);
 
             if (pID == 0) {
-                int para = 0;
+                int para = 0; // "para" es un buffer que no significa nada, no queremos enviar info, solo indicar que paren
                 for (int k = 1; k < iNP; k++) {
                     MPI_Send(&para, 1, MPI_INT, k, TAG_STOP, MPI_COMM_WORLD);
                     EST_SEND_STOP++;                                         
                 }
             }
+            
 
-            unsigned long long sumar_intentos = 0;
-            double maximo_tpo = 0.0;
+            unsigned long long sumar_intentos = 0; // Intentos acumulados de todos los procesos
+            double maximo_tpo = 0.0;               // Tiempo máximo en busca_numero para todos los procesos
+
+            // -- Conseguir datos de todos los procesos, sincronizándolos --
             MPI_Reduce(&intentos, &sumar_intentos, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
             EST_REDUCE_INTENTOS++;
             MPI_Reduce(&tpo, &maximo_tpo, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
             EST_REDUCE_TPO++;
-            
-            if (pID == 0) {
+            // --                                                         --
+
+            if (pID == 0) { // Imprimir datos de esta ronda de busca_numero
+                
                 intentos_totales += sumar_intentos;
-                tpo_total += maximo_tpo;
-                printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %d)", i+1, SETS_LISTA, j+1, TAMANHO, numero, sumar_intentos, maximo_tpo, encontrado);
+                tpo_total += maximo_tpo; // TODO: Sería += maximo_tpo * iNP para contar el acumulado de todos los procesos? (Ya que estamos usando MPI_MAX)
+                printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %d)", 
+                        i+1, SETS_LISTA, j+1, TAMANHO, numero, sumar_intentos, maximo_tpo, encontrado);
                 
                 int flag;
                 int mensajero;
-                MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
                 EST_IPROBE_FIND++;
                 a=0;
-                while (flag) {
+                while (!MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status) && flag) {
+                    // Miramos si alguno más lo encontró
                     MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
                     EST_RECV_FIND++;
                     if (a == 0){
-                        printf(" tambien encontardo por %d", encontrado);
+                        printf(" |También encontrado por %d|", encontrado);
                     }else{
                         printf(", %d", encontrado);
                     }
                     a++;
-                    MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
                     EST_IPROBE_FIND++;
                 }
-                encontrado=0;
+                encontrado = 0; // Encontrado es por defecto 0, si un PID != 0 encuentra, se devuelve en busca_numero
                 printf("\n");
             }
-            MPI_Barrier(MPI_COMM_WORLD);
-            }
-            if (pID == 0)
-                printf("Resumen SET %d:\nIntentos Acumulados: %llu\nTiempo Acumulado: %.8f\n", i, intentos_totales, tpo_total);
-            MPI_Barrier(MPI_COMM_WORLD);
-        }
 
-        if (pID == 0) {
-            double tiempo_fin_total = mygettime();
-            double tiempo_total_prueba = tiempo_fin_total - tiempo_inicio_total;
+            MPI_Barrier(MPI_COMM_WORLD); // Para qué es esto necesario TODO
+            
+        }
         
-            printf("Intentos Acumulados : %llu\n", intentos_totales);
-            printf("Tiempo Acumulado Procesos: %.6f\n", tpo_total);
-            printf("Tiempo Total Prueba : %.6f\n", tiempo_total_prueba);
-            printf("Intentos por segundo : %.6f\n", (double)intentos_totales / tiempo_total_prueba);
-            printf("============================================================================\n");
-            printf("FINAL:\n");
-            printf("============================================================================\n");
-            printf("Intentos Acumulados : %llu\n", intentos_totales);
-            printf("Tiempo Acumulado Procesos: %.6f\n", tpo_total);
-            printf("Tiempo Total Prueba : %.6f\n", tiempo_total_prueba);
-            printf("Intentos por segundo : %.6f\n", (double)intentos_totales / tiempo_total_prueba);
-            printf("============================================================================\n");
-            printf("LLAMADAS MPI:\n");
-            printf("============================================================================\n");
-            printf("EST_SEND_STOP : %lu\n", EST_SEND_STOP);
-            printf("EST_SEND_FIND : %lu\n", EST_SEND_FIND);
-            printf("EST_RECV_STOP : %lu\n", EST_RECV_STOP);
-            printf("EST_RECV_FIND : %lu\n", EST_RECV_FIND);
-            printf("EST_BCAST_NUMERO : %lu\n", EST_BCAST_NUMERO);
-            printf("EST_BCAST_FIN : %lu\n", EST_BCAST_FIN);
-            printf("EST_REDUCE_TPO : %lu\n", EST_REDUCE_TPO);
-            printf("EST_REDUCE_INTENTOS: %lu\n", EST_REDUCE_INTENTOS);
-            printf("EST_REDUCE_EST : %lu\n", EST_REDUCE_EST);
-            printf("EST_IPROBE_FIND : %lu\n", EST_IPROBE_FIND);
-            printf("EST_IPROBE_STOP : %lu\n", EST_IPROBE_STOP);
-            printf("============================================================================\n");
-            printf("ENCONTRADOS:\n");
-            for (int i = 0; i < iNP; i++) {
-                printf("%d: %lu (%.6f)\n", i, encontrados_por_proceso[i], 
-                       encontrados_por_proceso[i] * (100.0 / (SETS_LISTA * TAMANHO)));
-            }
-        }        
+        if (pID == 0)
+            printf("Resumen SET %d:\nIntentos Acumulados: %llu\nTiempo Acumulado: %.8f\n", i, intentos_totales, tpo_total);
+        
+        MPI_Barrier(MPI_COMM_WORLD); // Lo mismo TODO
+        
+    }
+
+        
+    if (pID == 0) {
     
+        double tiempo_fin_total = mygettime();
+        double tiempo_total_prueba = tiempo_fin_total - tiempo_inicio_total;
+        
+        printf("Intentos Acumulados : %llu\n", intentos_totales);
+        printf("Tiempo Acumulado Procesos: %.6f\n", tpo_total);
+        printf("Tiempo Total Prueba : %.6f\n", tiempo_total_prueba);
+        printf("Intentos por segundo : %.6f\n", (double)intentos_totales / tiempo_total_prueba);
+        printf("============================================================================\n");
+        printf("FINAL:\n");
+        printf("============================================================================\n");
+        printf("Intentos Acumulados : %llu\n", intentos_totales);
+        printf("Tiempo Acumulado Procesos: %.6f\n", tpo_total);
+        printf("Tiempo Total Prueba : %.6f\n", tiempo_total_prueba);
+        printf("Intentos por segundo : %.6f\n", (double)intentos_totales / tiempo_total_prueba);
+        printf("============================================================================\n");
+        printf("LLAMADAS MPI:\n");
+        printf("============================================================================\n");
+        printf("EST_SEND_STOP : %lu\n", EST_SEND_STOP);
+        printf("EST_SEND_FIND : %lu\n", EST_SEND_FIND);
+        printf("EST_RECV_STOP : %lu\n", EST_RECV_STOP);
+        printf("EST_RECV_FIND : %lu\n", EST_RECV_FIND);
+        printf("EST_BCAST_NUMERO : %lu\n", EST_BCAST_NUMERO);
+        printf("EST_BCAST_FIN : %lu\n", EST_BCAST_FIN);
+        printf("EST_REDUCE_TPO : %lu\n", EST_REDUCE_TPO);
+        printf("EST_REDUCE_INTENTOS: %lu\n", EST_REDUCE_INTENTOS);
+        printf("EST_REDUCE_EST : %lu\n", EST_REDUCE_EST);
+        printf("EST_IPROBE_FIND : %lu\n", EST_IPROBE_FIND);
+        printf("EST_IPROBE_STOP : %lu\n", EST_IPROBE_STOP);
+        printf("============================================================================\n");
+        printf("ENCONTRADOS:\n");
+        
+        for (int i = 0; i < iNP; i++) {
+            printf("%d: %lu (%.6f)\n", i, encontrados_por_proceso[i], 
+                   encontrados_por_proceso[i] * (100.0 / (SETS_LISTA * TAMANHO)));
+        }
+    }        
+        
     MPI_Finalize();
     return 0;
 }
