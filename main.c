@@ -86,6 +86,7 @@ int busca_numero(unsigned int numero, unsigned long long * intentos, double * tp
     int parar = 0;
     int para;
     int encontrado = 0; // Proceso que encuentra el número, por defecto es el padre
+
     do{ 
         (*intentos)++;
        
@@ -158,6 +159,8 @@ int main(int argc, char *argv[]) {
 
     double tiempo_inicio_total = mygettime();
 
+    bool hijo_detecta_salir = false;
+
     for (int i=0; i < SETS_LISTA; i++){
         if (pID == 0)
             printf("SET: %d\n", i);
@@ -165,7 +168,10 @@ int main(int argc, char *argv[]) {
             if (pID == 0)
                 numero=numeros[i][j];
 
-            MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD); // Comunicar a todos el numero a adivinar
+            MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD); // PADRE: Comunicar a todos el numero a adivinar
+                                                               // HIJOS: Reciben el número a adivinar
+            // IDEA: Si los hijos reciben -1, hijo_detecta_salir = true; break;
+
             EST_BCAST_NUMERO++;
 
             unsigned long long intentos = 0;
@@ -235,6 +241,8 @@ int main(int argc, char *argv[]) {
 
     // TODO: "Una vez finalizados los “sets” notificará a todos los procesos que ya no hay más números que buscar y que manden sus estadísticas de llamadas a funciones MPI."
         // ¿Los procesos hijos pueden conocer de antemano el total de números a encontrar? Ralves dice que solo se enteran de que hay que parar cuando se les notifica
+    
+    // Aquí poner un reduce para todas las cuentas de instrucciones MPI
 
         
     if (pID == 0) {
