@@ -144,8 +144,14 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &iNP); // Devuelve el número de procesos "invocados"
     MPI_Comm_rank(MPI_COMM_WORLD, &pID); // Devuelve el PID de MPI
 
-    unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso
 
+    unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso
+    
+    // -- Arrays para acumular estadísticas de los sets. --
+    unsigned long long intentos_acumulados_set[SETS];
+    double tiempo_acumulado_set[SETS];
+    double tiempo_total_prueba_set[SETS];
+    // --                                                --
     memset(encontrados_por_proceso, 0, sizeof(unsigned long) * iNP);
 
     mysrand(pID);
@@ -184,8 +190,11 @@ int main(int argc, char *argv[]) {
             MPI_Reduce(&tpo, &sumar_tpo, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
             EST_REDUCE_TPO++;
             // --                                                         --
-            
+            intentos_acumulados_set[i] += sumar_intentos;
+            tiempo_acumulado_set[i] += sumar_tpo;
+            tiempo_total_prueba_set[i] += tpo;
 
+            
             if (pID == 0) { // Imprimir datos de esta ronda de busca_numero
                 
                 intentos_totales += sumar_intentos;
@@ -218,8 +227,10 @@ int main(int argc, char *argv[]) {
         }
         
         if (pID == 0)
-            printf("Resumen SET %d:\nIntentos Acumulados: %llu\nTiempo Acumulado: %.8f\n", i, intentos_totales, tpo_total);
-         
+            printf("Resumen SET %d:\nIntentos Acumulados: %llu\nTiempo Acumulado: %.8f\nTiempo Total Prueba: %.6f\nIntentos por segundo: %.6f\n", 
+                    i, intentos_acumulados_set[i],
+                    tiempo_acumulado_set[i], tiempo_total_prueba_set[i],
+                    intentos_acumulados_set[i] / tiempo_total_prueba_set[i]);
     }
 
     // TODO: "Una vez finalizados los “sets” notificará a todos los procesos que ya no hay más números que buscar y que manden sus estadísticas de llamadas a funciones MPI."
@@ -231,11 +242,7 @@ int main(int argc, char *argv[]) {
         double tiempo_fin_total = mygettime();
         double tiempo_total_prueba = tiempo_fin_total - tiempo_inicio_total;
         
-        printf("Intentos Acumulados : %llu\n", intentos_totales);
-        printf("Tiempo Acumulado Procesos: %.6f\n", tpo_total);
-        printf("Tiempo Total Prueba : %.6f\n", tiempo_total_prueba);
-        printf("Intentos por segundo : %.6f\n", (double)intentos_totales / tiempo_total_prueba);
-        printf("============================================================================\n");
+        printf("\n\n============================================================================\n");
         printf("FINAL:\n");
         printf("============================================================================\n");
         printf("Intentos Acumulados : %llu\n", intentos_totales);
