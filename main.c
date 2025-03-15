@@ -76,21 +76,21 @@ int busca_numero(unsigned int numero, unsigned long long *intentos, double *tpo)
 
     if ((myrand() % (NUM_MAX - 1) + 1) == numero) { // Numero encontrado
       bSalir = 1;
-      if (pID != 0) {                                             // Encontrado, por defecto, es 0, si el padre lo encuentra no tiene que hacer nada
-        MPI_Send(&pID, 1, MPI_INT, 0, TAG_FOUND, MPI_COMM_WORLD); // Decirle al padre que lo hemos encontrado
+      if (pID != 0) { // Encontrado, por defecto, es 0, si el padre lo encuentra no tiene que hacer nada
         EST_SEND_FIND++;
-        MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status); // Esperar a que nos confirme la recepción, nos sincroniza con los que no han encontrado el número
+        MPI_Send(&pID, 1, MPI_INT, 0, TAG_FOUND, MPI_COMM_WORLD); // Decirle al padre que lo hemos encontrado
         EST_RECV_STOP++;
+        MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status); // Esperar a que nos confirme la recepción, nos sincroniza con los que no han encontrado el número
       }
     }
-    if (pID == 0) {                                                            // Comprobar si alguien lo ha encontrado
-      if (i == ITERACIONES_SIN_MIRAR) {                                        // Cada ITERACIONES_SIN_MIRAR iteraciones
-        MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status); // Recibir TAG_FOUND primer proceso en encontrar
+    if (pID == 0) {                     // Comprobar si alguien lo ha encontrado
+      if (i == ITERACIONES_SIN_MIRAR) { // Cada ITERACIONES_SIN_MIRAR iteraciones
         EST_IPROBE_FIND++;
+        MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status); // Recibir TAG_FOUND primer proceso en encontrar
         if (flag) {
           int mensajero;
-          MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
           EST_RECV_FIND++;
+          MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
           encontrado = mensajero; // Lo ha encontrado "mensajero"
           bSalir = 1;
         }
@@ -99,12 +99,12 @@ int busca_numero(unsigned int numero, unsigned long long *intentos, double *tpo)
       i++;
     } else { // Comprobar si hay que parar
       if (i == ITERACIONES_SIN_MIRAR) {
-        MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &parar, &status);
         EST_IPROBE_STOP++;
+        MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &parar, &status);
         if (parar) {
           // Consumir el mensaje de parada
-          MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
           EST_RECV_STOP++;
+          MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
           bSalir = 1;
         }
         i = 0;
@@ -149,9 +149,9 @@ int main(int argc, char *argv[]) {
       if (pID == 0)
         numero = numeros[i][j];
 
+      EST_BCAST_NUMERO++;
       MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD); // PADRE: Comunicar a todos el numero a adivinar
                                                          // HIJOS: Reciben el número a adivinar
-      EST_BCAST_NUMERO++;
 
       if (pID != 0) {
         j = 0; // Los hijos se quedan en el bucle for interior infinitamente
@@ -168,8 +168,8 @@ int main(int argc, char *argv[]) {
       if (pID == 0) {
         int para = 0; // "para" es un buffer que no significa nada, no queremos enviar info, solo indicar que paren
         for (int k = 1; k < iNP; k++) {
-          MPI_Send(&para, 1, MPI_INT, k, TAG_STOP, MPI_COMM_WORLD);
           EST_SEND_STOP++;
+          MPI_Send(&para, 1, MPI_INT, k, TAG_STOP, MPI_COMM_WORLD);
         }
       }
 
@@ -177,10 +177,10 @@ int main(int argc, char *argv[]) {
       double sumar_tpo = 0.0;                // Tiempo máximo en busca_numero para todos los procesos
 
       // -- Conseguir datos de todos los procesos, sincronizándolos --
-      MPI_Reduce(&intentos, &sumar_intentos, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
       EST_REDUCE_INTENTOS++;
-      MPI_Reduce(&tpo, &sumar_tpo, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+      MPI_Reduce(&intentos, &sumar_intentos, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
       EST_REDUCE_TPO++;
+      MPI_Reduce(&tpo, &sumar_tpo, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
       // --                                                         --
       intentos_acumulados_set[i] += sumar_intentos;
       tiempo_acumulado_set[i] += sumar_tpo;
@@ -196,19 +196,17 @@ int main(int argc, char *argv[]) {
 
         int flag;
         int mensajero;
-        EST_IPROBE_FIND++;
         a = 0;
-        while (!MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status) && flag) {
+        while (++EST_IPROBE_FIND && !MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status) && flag) {
           // Miramos si alguno más lo encontró
-          MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
           EST_RECV_FIND++;
+          MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
           if (a == 0) {
-            printf(" |También encontrado por %d|", mensajero); // Había un error
+            printf(" |También encontrado por %d", mensajero); // Había un error
           } else {
             printf(", %d", encontrado);
           }
           a++;
-          EST_IPROBE_FIND++;
         }
         printf("\n");
       }
@@ -226,10 +224,9 @@ int main(int argc, char *argv[]) {
   }
 
   if (pID == 0) {
-
     int numero = -1;
-    MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD);
     EST_BCAST_FIN++;
+    MPI_Bcast(&numero, 1, MPI_INT, 0, MPI_COMM_WORLD);
   }
 
   MPI_Barrier(MPI_COMM_WORLD);
@@ -241,7 +238,7 @@ int main(int argc, char *argv[]) {
   EST_SEND_STOP = recv_buffer;
 
   EST_REDUCE_EST++;
-  MPI_Reduce(&EST_SEND_STOP, &recv_buffer, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+  MPI_Reduce(&EST_SEND_FIND, &recv_buffer, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
   EST_SEND_FIND = recv_buffer;
 
   EST_REDUCE_EST++;
@@ -267,7 +264,7 @@ int main(int argc, char *argv[]) {
   EST_REDUCE_EST++;
   MPI_Reduce(&EST_REDUCE_INTENTOS, &recv_buffer, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
   EST_REDUCE_INTENTOS = recv_buffer;
-  
+
   EST_REDUCE_EST++;
   MPI_Reduce(&EST_IPROBE_FIND, &recv_buffer, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
   EST_IPROBE_FIND = recv_buffer;
@@ -279,7 +276,6 @@ int main(int argc, char *argv[]) {
   EST_REDUCE_EST++;
   MPI_Reduce(&EST_REDUCE_EST, &recv_buffer, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
   EST_REDUCE_EST = recv_buffer;
-
 
   if (pID == 0) {
 
