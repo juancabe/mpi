@@ -129,6 +129,13 @@ int main(int argc, char *argv[]) {
   MPI_Comm_size(MPI_COMM_WORLD, &iNP); // Devuelve el número de procesos "invocados"
   MPI_Comm_rank(MPI_COMM_WORLD, &pID); // Devuelve el PID de MPI
 
+  if (pID == 0) {
+    printf("RAND_MAX : %d\n", MY_RAND_MAX);
+    printf("NUM_MAX : %d\n", NUM_MAX);
+    printf("UINT_MAX : %u\n", UINT_MAX);
+    printf("ULLONG_MAX: %llu\n", ULLONG_MAX);
+  }
+
   unsigned long encontrados_por_proceso[iNP]; // Array para guardar el número de aciertos por proceso
 
   // -- Arrays para acumular estadísticas de los sets. --
@@ -144,6 +151,7 @@ int main(int argc, char *argv[]) {
 
   for (int i = 0; i < SETS_LISTA; i++) {
     if (pID == 0)
+      printf("*****************************************************************************\n");
       printf("SET: %d\n", i);
     for (int j = 0; j < TAMANHO; j++) {
       if (pID == 0)
