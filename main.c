@@ -73,7 +73,6 @@ int busca_numero(unsigned int numero, unsigned long long *intentos, double *tpo)
 
   do {
     (*intentos)++;
-
     if ((myrand() % (NUM_MAX - 1) + 1) == numero) { // Numero encontrado
       bSalir = 1;
       if (pID != 0) { // Encontrado, por defecto, es 0, si el padre lo encuentra no tiene que hacer nada
@@ -82,9 +81,8 @@ int busca_numero(unsigned int numero, unsigned long long *intentos, double *tpo)
         EST_RECV_STOP++;
         MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status); // Esperar a que nos confirme la recepción, nos sincroniza con los que no han encontrado el número
       }
-    }
-    if (pID == 0) {                     // Comprobar si alguien lo ha encontrado
-      if (i == ITERACIONES_SIN_MIRAR) { // Cada ITERACIONES_SIN_MIRAR iteraciones
+    } else if (i == ITERACIONES_SIN_MIRAR) { // Comprobar si alguien lo ha encontrado cada ITERACIONES_SIN_MIRAR iteraciones
+      if (pID == 0) {                        // Padre
         EST_IPROBE_FIND++;
         MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status); // Recibir TAG_FOUND primer proceso en encontrar
         if (flag) {
@@ -94,11 +92,7 @@ int busca_numero(unsigned int numero, unsigned long long *intentos, double *tpo)
           encontrado = mensajero; // Lo ha encontrado "mensajero"
           bSalir = 1;
         }
-        i = 0;
-      }
-      i++;
-    } else { // Comprobar si hay que parar
-      if (i == ITERACIONES_SIN_MIRAR) {
+      } else { // Comprobar si hay que parar HIJO
         EST_IPROBE_STOP++;
         MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &parar, &status);
         if (parar) {
@@ -107,10 +101,10 @@ int busca_numero(unsigned int numero, unsigned long long *intentos, double *tpo)
           MPI_Recv(&para, 1, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
           bSalir = 1;
         }
-        i = 0;
       }
-      i++;
+      i = 0;
     }
+    i++;
   } while (!bSalir);
   t2 = mygettime();
   *tpo = t2 - t1;
@@ -124,7 +118,6 @@ int main(int argc, char *argv[]) {
   int iNP, numero;
   unsigned long long intentos_totales = 0;
   double tpo_total = 0.0;
-  int a;
 
   MPI_Comm_size(MPI_COMM_WORLD, &iNP); // Devuelve el número de procesos "invocados"
   MPI_Comm_rank(MPI_COMM_WORLD, &pID); // Devuelve el PID de MPI
@@ -150,9 +143,10 @@ int main(int argc, char *argv[]) {
   double tiempo_inicio_total = mygettime();
 
   for (int i = 0; i < SETS_LISTA; i++) {
-    if (pID == 0)
+    if (pID == 0) {
       printf("*****************************************************************************\n");
       printf("SET: %d\n", i);
+    }
     for (int j = 0; j < TAMANHO; j++) {
       if (pID == 0)
         numero = numeros[i][j];
@@ -198,23 +192,36 @@ int main(int argc, char *argv[]) {
 
         intentos_totales += sumar_intentos;
         tpo_total += sumar_tpo; // HECHO: Sería += sumar_tpo
-        printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %d)", i + 1, SETS_LISTA, j + 1, TAMANHO, numero, sumar_intentos, tpo, encontrado);
+        printf("S:%d/%d, N:%2d/%d) Num:%10d, Int:%10llu, Tpo: %.8f (ENCONTRADO POR %2d)", i + 1, SETS_LISTA, j + 1, TAMANHO, numero, sumar_intentos, tpo, encontrado);
 
         encontrados_por_proceso[encontrado]++;
 
         int flag;
-        int mensajero;
-        a = 0;
-        while (++EST_IPROBE_FIND && !MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status) && flag) {
-          // Miramos si alguno más lo encontró
+        ++EST_IPROBE_FIND;
+        int rc = MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
+        if (rc != 0) {
+          assert(false);
+        }
+        bool primero = true;
+        while (flag) {
+          int mensajero;
           EST_RECV_FIND++;
           MPI_Recv(&mensajero, 1, MPI_INT, status.MPI_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &status);
-          if (a == 0) {
-            printf(" |También encontrado por %d", mensajero); // Había un error
+          if (primero) {
+            printf(" | También encontrado por %d", mensajero);
+            primero = false;
           } else {
-            printf(", %d", encontrado);
+            printf(", %d", mensajero);
           }
-          a++;
+          ++EST_IPROBE_FIND;
+          rc = MPI_Iprobe(MPI_ANY_SOURCE, TAG_FOUND, MPI_COMM_WORLD, &flag, &status);
+          if (rc != 0) {
+            assert(false);
+            break;
+          }
+        }
+        if (!primero) {
+          printf(" |");
         }
         printf("\n");
       }
